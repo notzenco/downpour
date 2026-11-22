@@ -32,7 +32,7 @@ export function RemoveDialog({ downloads, onCancel, onConfirm }: Props) {
         <button className="btn" onClick={onCancel}>
           Cancel
         </button>
-        <button className={`btn ${deleteFiles ? "btn-danger" : "btn-primary"}`} autoFocus onClick={() => onConfirm(deleteFiles)}>
+        <button className={`btn ${deleteFiles ? "btn-danger" : "btn-primary"}`} data-autofocus onClick={() => onConfirm(deleteFiles)}>
           {deleteFiles ? "Remove and delete" : "Remove"}
         </button>
       </footer>

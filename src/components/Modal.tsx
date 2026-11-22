@@ -8,12 +8,17 @@ interface Props {
   className?: string;
 }
 
-/** Native modal dialog: the browser handles focus containment, Escape and the backdrop. */
+/**
+ * Native modal dialog: the browser handles focus containment, Escape and the backdrop.
+ * `showModal` focuses the first control (the close button), so the dialog moves focus
+ * to the element marked `data-autofocus` instead.
+ */
 export function Modal({ title, onClose, children, className }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const el = ref.current;
     if (el && !el.open) el.showModal();
+    el?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     return () => el?.close();
   }, []);
   return (

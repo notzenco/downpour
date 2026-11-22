@@ -1,15 +1,21 @@
 import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 import { FolderInput } from "lucide-react";
-import { useState } from "react";
-import { errorText, type Settings } from "../api";
+import { useEffect, useState } from "react";
+import { api, errorText, type Settings } from "../api";
 import { saveSettings, useStore } from "../store";
 import { Modal } from "./Modal";
 
 const MB = 1024 * 1024;
+const listFormat = new Intl.ListFormat(undefined, { type: "conjunction" });
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const settings = useStore((s) => s.settings)!;
   const [error, setError] = useState<string | null>(null);
+  const [browsers, setBrowsers] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    api.browserStatus().then(setBrowsers, () => setBrowsers([]));
+  }, []);
   const [limitText, setLimitText] = useState(settings.speedLimit ? String(+(settings.speedLimit / MB).toFixed(2)) : "");
 
   const update = (patch: Partial<Settings>) => {
@@ -107,6 +113,31 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           </div>
+        </section>
+
+        <section className="settings-group">
+          <h3>Browser</h3>
+          <div className="setting">
+            <div className="setting-text">
+              <span>Browser extension</span>
+              <span className="setting-hint">
+                {browsers === null
+                  ? "Checking installed browsers…"
+                  : browsers.length
+                    ? `Ready for ${listFormat.format(browsers)}. Add the extension to send downloads and links here.`
+                    : "No supported browser found. The extension works with Chrome, Edge, Brave, Vivaldi and Firefox."}
+              </span>
+            </div>
+            <button type="button" className="btn" onClick={() => api.openExtensionHelp().catch((e) => setError(errorText(e)))}>
+              Get the extension
+            </button>
+          </div>
+          <Toggle
+            label="Ask before downloading links from the browser"
+            hint="When off, links the extension sends start downloading straight away."
+            checked={settings.confirmBrowserDownloads}
+            onChange={(v) => update({ confirmBrowserDownloads: v })}
+          />
         </section>
 
         <section className="settings-group">

@@ -42,6 +42,7 @@ export interface Settings {
   notifyOnComplete: boolean;
   closeToTray: boolean;
   watchClipboard: boolean;
+  confirmBrowserDownloads: boolean;
   theme: "system" | "light" | "dark";
 }
 
@@ -72,7 +73,16 @@ export interface AddRequest {
   saveDir?: string;
   connections?: number;
   referer?: string;
+  headers?: Record<string, string>;
   start: boolean;
+}
+
+/** A link handed over by the browser extension. */
+export interface ExternalAdd {
+  url: string;
+  fileName?: string;
+  referer?: string;
+  headers: Record<string, string>;
 }
 
 export type EngineEvent =
@@ -83,7 +93,8 @@ export type EngineEvent =
 
 export const api = {
   snapshot: () => invoke<{ downloads: Download[]; settings: Settings }>("get_snapshot"),
-  probe: (url: string, referer?: string) => invoke<ProbeInfo>("probe_url", { url, referer }),
+  probe: (url: string, referer?: string, headers?: Record<string, string>) =>
+    invoke<ProbeInfo>("probe_url", { url, referer, headers }),
   add: (requests: AddRequest[]) => invoke<Download[]>("add_downloads", { requests }),
   pause: (ids: string[]) => invoke<void>("pause_downloads", { ids }),
   resume: (ids: string[]) => invoke<void>("resume_downloads", { ids }),
@@ -92,7 +103,12 @@ export const api = {
   updateSettings: (settings: Settings) => invoke<Settings>("update_settings", { settings }),
   open: (id: string) => invoke<void>("open_download", { id }),
   reveal: (id: string) => invoke<void>("reveal_download", { id }),
+  takeExternalAdds: () => invoke<ExternalAdd[]>("take_external_adds"),
+  browserStatus: () => invoke<string[]>("browser_status"),
+  openExtensionHelp: () => invoke<void>("open_extension_help"),
 };
+
+export const onExternalAdd = (cb: () => void) => listen("external-add", () => cb());
 
 export const onEngine = (cb: (e: EngineEvent) => void) => listen<EngineEvent>("engine", (e) => cb(e.payload));
 

@@ -2,7 +2,7 @@ import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 import { Check, FolderInput, LoaderCircle, TriangleExclamationPoint } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, errorText, type Category, type Download, type ProbeInfo } from "../api";
+import { api, errorText, type Category, type Download, type ExternalAdd, type ProbeInfo } from "../api";
 import { extractUrls, formatBytes, hostOf, nameFromUrl } from "../format";
 import { getState, useStore } from "../store";
 import { FileIcon } from "./FileIcon";
@@ -22,16 +22,18 @@ type ProbeState = { kind: "idle" } | { kind: "loading"; url: string } | { kind: 
 
 interface Props {
   initialText?: string;
+  /** A link sent by the browser extension, with its referrer and cookies. */
+  external?: ExternalAdd;
   onClose: () => void;
   onAdded: (downloads: Download[]) => void;
 }
 
-export function AddDialog({ initialText, onClose, onAdded }: Props) {
+export function AddDialog({ initialText, external, onClose, onAdded }: Props) {
   const settings = useStore((s) => s.settings)!;
-  const [text, setText] = useState(initialText ?? "");
+  const [text, setText] = useState(external?.url ?? initialText ?? "");
   const [probe, setProbe] = useState<ProbeState>({ kind: "idle" });
-  const [fileName, setFileName] = useState("");
-  const nameEdited = useRef(false);
+  const [fileName, setFileName] = useState(external?.fileName ?? "");
+  const nameEdited = useRef(Boolean(external?.fileName));
   const [saveDir, setSaveDir] = useState<string | null>(null);
   const [connections, setConnections] = useState(settings.connections);
   const [submitting, setSubmitting] = useState(false);
@@ -40,9 +42,11 @@ export function AddDialog({ initialText, onClose, onAdded }: Props) {
 
   const urls = useMemo(() => extractUrls(text), [text]);
   const single = urls.length === 1 ? urls[0] : null;
+  // The browser's referrer and cookies apply only while the link is the one it sent.
+  const fromBrowser = external && single === new URL(external.url).toString() ? external : undefined;
 
   useEffect(() => {
-    if (initialText) return;
+    if (initialText || external) return;
     readText()
       .then((clip) => {
         if (extractUrls(clip ?? "").length > 0) {
@@ -51,7 +55,7 @@ export function AddDialog({ initialText, onClose, onAdded }: Props) {
         }
       })
       .catch(() => {});
-  }, [initialText]);
+  }, [initialText, external]);
 
   useEffect(() => {
     if (!single) {
@@ -62,7 +66,7 @@ export function AddDialog({ initialText, onClose, onAdded }: Props) {
     const t = setTimeout(() => {
       setProbe({ kind: "loading", url: single });
       api
-        .probe(single)
+        .probe(single, fromBrowser?.referer, fromBrowser?.headers)
         .then((info) => {
           if (stale) return;
           setProbe({ kind: "ok", info });
@@ -101,6 +105,8 @@ export function AddDialog({ initialText, onClose, onAdded }: Props) {
         connections,
         saveDir: saveDir ?? undefined,
         fileName: single && (nameEdited.current || info) && fileName.trim() ? fileName.trim() : undefined,
+        referer: fromBrowser?.referer,
+        headers: fromBrowser?.headers,
       }));
       onAdded(await api.add(requests));
     } catch (e) {
@@ -130,7 +136,7 @@ export function AddDialog({ initialText, onClose, onAdded }: Props) {
             ref={inputRef}
             className="url-input"
             value={text}
-            autoFocus
+            data-autofocus={external ? undefined : true}
             rows={Math.min(5, Math.max(1, text.split("\n").length))}
             placeholder="https://example.com/file.zip"
             spellCheck={false}
@@ -142,7 +148,13 @@ export function AddDialog({ initialText, onClose, onAdded }: Props) {
               }
             }}
           />
-          <span className="field-hint">Paste one link, or several on separate lines.</span>
+          <span className="field-hint">
+            {fromBrowser
+              ? fromBrowser.headers.Cookie
+                ? "Sent from your browser, with its sign-in cookies for this site."
+                : "Sent from your browser."
+              : "Paste one link, or several on separate lines."}
+          </span>
         </label>
 
         {single && (
@@ -235,7 +247,7 @@ export function AddDialog({ initialText, onClose, onAdded }: Props) {
           <button type="button" className="btn" disabled={urls.length === 0 || submitting} onClick={() => submit(false)}>
             Add paused
           </button>
-          <button type="submit" className="btn btn-primary" disabled={urls.length === 0 || submitting}>
+          <button type="submit" className="btn btn-primary" disabled={urls.length === 0 || submitting} data-autofocus={external ? true : undefined}>
             {action}
           </button>
         </footer>

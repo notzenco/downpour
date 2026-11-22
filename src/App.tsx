@@ -1,7 +1,7 @@
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { ArrowDownToLine, Pause, Play, Plus, Search, Trash, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, errorText, type Download } from "./api";
+import { api, errorText, onExternalAdd, type Download, type ExternalAdd } from "./api";
 import { AddDialog } from "./components/AddDialog";
 import { DetailPanel } from "./components/DetailPanel";
 import { DownloadRow } from "./components/DownloadRow";
@@ -21,7 +21,7 @@ interface Toast {
   action?: { label: string; run: () => void };
 }
 
-type Overlay = { kind: "add"; text?: string } | { kind: "settings" } | { kind: "remove"; ids: string[] } | null;
+type Overlay = { kind: "add"; text?: string; external?: ExternalAdd } | { kind: "settings" } | { kind: "remove"; ids: string[] } | null;
 
 const VIEW_TITLE: Record<Exclude<View["kind"], "category">, string> = {
   all: "All downloads",
@@ -56,6 +56,7 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const lastClipboard = useRef<string | null>(null);
+  const [fromBrowser, setFromBrowser] = useState<ExternalAdd[]>([]);
 
   const all = useMemo(() => Object.values(downloads), [downloads]);
   const visible = useMemo(() => {
@@ -211,6 +212,32 @@ export default function App() {
     return () => window.removeEventListener("focus", onFocus);
   }, [overlay, toast]);
 
+  // Links sent by the browser extension: confirm each in the add dialog, or start them directly.
+  useEffect(() => {
+    if (!ready) return;
+    const take = async () => {
+      const adds = await api.takeExternalAdds().catch(() => []);
+      if (!adds.length) return;
+      if (getState().settings?.confirmBrowserDownloads === false) {
+        const requests = adds.map((a) => ({ url: a.url, fileName: a.fileName, referer: a.referer, headers: a.headers, start: true }));
+        run(api.add(requests).then((ds) => toast(ds.length === 1 ? `Downloading ${ds[0].fileName}` : `Downloading ${ds.length} files from your browser`)));
+      } else {
+        setFromBrowser((queue) => [...queue, ...adds]);
+      }
+    };
+    take();
+    const unlisten = onExternalAdd(take);
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [ready, run, toast]);
+
+  useEffect(() => {
+    if (overlay || fromBrowser.length === 0) return;
+    setOverlay({ kind: "add", external: fromBrowser[0] });
+    setFromBrowser((queue) => queue.slice(1));
+  }, [overlay, fromBrowser]);
+
   const title = view.kind === "category" ? (CATEGORIES.find((c) => c.id === view.category)?.label ?? "") : VIEW_TITLE[view.kind];
   const anyRunning = all.some(isRunning);
   const anyResumable = all.some((d) => d.status === "paused" || d.status === "failed");
@@ -358,7 +385,9 @@ export default function App() {
 
       {overlay?.kind === "add" && (
         <AddDialog
+          key={overlay.external?.url ?? "add"}
           initialText={overlay.text}
+          external={overlay.external}
           onClose={() => setOverlay(null)}
           onAdded={(ds) => {
             setOverlay(null);
