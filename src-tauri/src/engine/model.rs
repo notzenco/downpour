@@ -114,6 +114,8 @@ pub struct Settings {
     pub notify_on_complete: bool,
     pub close_to_tray: bool,
     pub watch_clipboard: bool,
+    /// Show the add dialog for links sent by the browser extension instead of starting them.
+    pub confirm_browser_downloads: bool,
     pub theme: String,
 }
 
@@ -132,6 +134,7 @@ impl Default for Settings {
             notify_on_complete: true,
             close_to_tray: true,
             watch_clipboard: true,
+            confirm_browser_downloads: true,
             theme: "system".to_string(),
         }
     }

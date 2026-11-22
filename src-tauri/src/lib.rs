@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod engine;
 
 use std::collections::BTreeMap;
@@ -5,6 +6,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use browser::ExternalAdd;
 use engine::error::EngineError;
 use engine::model::{AddRequest, Download, EngineEvent, ProbeInfo, Settings, Snapshot};
 use engine::{EventSink, Manager};
@@ -15,6 +17,15 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 const TRAY_ID: &str = "main";
+const EXTENSION_HELP_URL: &str = "https://github.com/notzenco/downpour#browser-extension";
+
+/// Downloads handed over by the browser extension, waiting for the interface to take them.
+#[derive(Default)]
+struct ExternalAdds(Mutex<Vec<ExternalAdd>>);
+
+/// Browsers the native messaging helper is registered with.
+#[derive(Default)]
+struct BrowserStatus(Mutex<Vec<&'static str>>);
 
 struct TauriSink {
     app: AppHandle,
@@ -152,12 +163,43 @@ fn commands<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         update_settings,
         open_download,
         reveal_download,
+        take_external_adds,
+        browser_status,
+        open_extension_help,
     ]
 }
 
 /// Generated once: the macro embeds the macOS Info.plist and may only expand once per crate.
 fn context<R: Runtime>() -> tauri::Context<R> {
     tauri::generate_context!()
+}
+
+#[tauri::command]
+fn take_external_adds(pending: State<'_, ExternalAdds>) -> Vec<ExternalAdd> {
+    std::mem::take(&mut *pending.0.lock().unwrap())
+}
+
+#[tauri::command]
+fn browser_status(status: State<'_, BrowserStatus>) -> Vec<&'static str> {
+    status.0.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn open_extension_help<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    app.opener()
+        .open_url(EXTENSION_HELP_URL, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+/// Queues downloads passed on the command line and tells the interface about them.
+fn receive_external(app: &AppHandle, args: &[String]) -> bool {
+    let adds = browser::adds_from_args(args);
+    if adds.is_empty() {
+        return false;
+    }
+    app.state::<ExternalAdds>().0.lock().unwrap().extend(adds);
+    let _ = app.emit("external-add", ());
+    true
 }
 
 fn show_main(app: &AppHandle) {
@@ -206,9 +248,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            receive_external(app, &argv);
             show_main(app)
         }))
+        .manage(ExternalAdds::default())
+        .manage(BrowserStatus::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -230,6 +275,20 @@ pub fn run() {
             manager.start();
             app.manage(manager);
             build_tray(&handle)?;
+
+            let args: Vec<String> = std::env::args().collect();
+            receive_external(&handle, &args);
+
+            let (home, data_dir, exe) = (
+                app.path().home_dir()?,
+                app.path().app_data_dir()?,
+                std::env::current_exe()?,
+            );
+            let status_handle = handle.clone();
+            std::thread::spawn(move || {
+                let registered = browser::register(&home, &data_dir, &exe);
+                *status_handle.state::<BrowserStatus>().0.lock().unwrap() = registered;
+            });
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -295,6 +354,8 @@ mod ipc_tests {
             Manager::new(data, downloads, Arc::new(Quiet))
         });
         app.manage(manager);
+        app.manage(ExternalAdds::default());
+        app.manage(BrowserStatus::default());
         let window = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
@@ -356,6 +417,7 @@ mod ipc_tests {
                 "notifyOnComplete",
                 "closeToTray",
                 "watchClipboard",
+                "confirmBrowserDownloads",
                 "theme",
             ])
         );
@@ -420,7 +482,17 @@ mod ipc_tests {
         );
         assert_eq!(saved["speedLimit"], 1048576);
 
-        let err = call(&w, "probe_url", json!({ "url": "notaurl" })).unwrap_err();
+        assert_eq!(
+            call(&w, "take_external_adds", json!({})).unwrap(),
+            json!([])
+        );
+        assert!(call(&w, "browser_status", json!({})).unwrap().is_array());
+        let err = call(
+            &w,
+            "probe_url",
+            json!({ "url": "notaurl", "headers": { "Cookie": "a=b" } }),
+        )
+        .unwrap_err();
         assert!(err.as_str().unwrap().contains("invalid URL"), "{err}");
 
         call(
