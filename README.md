@@ -167,6 +167,10 @@ and the interface renders from them; the interface never polls.
 - **CI** runs formatting, type checking, Clippy with warnings as errors and all
   tests on Windows, macOS and Linux.
 
+[docs/testing.md](docs/testing.md) lists the end-to-end checks run against the
+release build, including the extension in a real browser, how to repeat them,
+what is not verified yet, and known limitations.
+
 ## Development
 
 Requirements: Rust (stable), Node 24, pnpm, and the
