@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Downpour",
+  "version": "0.1.0",
+  "description": "Send downloads and links to the Downpour download manager.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyqTFXeCHu0e5EtdoEK6EswqPnb1XadbCMZ+22v6xsYULyMZtc8S9YnaJ6XFzpIl7yZzyJfk/nNnwoVM5jfP9Af32eKaE9WLICOm8ounuWozV6t1YjjKqJFOr3k3n0R+OZv2h9altphLYe3KsCowJ8ewRsm3O/lnO7Supn+o+Bp4GOhACJsh1tnnCYy58szBQaU9XhMcD89MR8SJV/91YVmny4+TAPVO8mBbGiduVKUFuTu0qIJPJMPAshc26juEy0AfGOn27NPOWa4eHtYe1riX5LCqUENYNr5qdFzbqH7fE1B58dH7C2Z3S/Wxv02zKJKCa45ugBqKiskcDk2ijeQIDAQAB",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "action": {
+    "default_title": "Downpour",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ],
+    "type": "module"
+  },
+  "permissions": [
+    "downloads",
+    "contextMenus",
+    "nativeMessaging",
+    "storage",
+    "cookies"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "downpour@zenco.cc",
+      "strict_min_version": "121.0"
+    }
+  }
+}
