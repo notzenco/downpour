@@ -23,6 +23,7 @@ struct ServerLog {
 const LIMITED_CONNECTIONS: usize = 2;
 
 /// Serves `/file` (ranges), `/limited` (ranges, slow, at most two at once),
+/// `/private` (ranges, 403 without the `session=abc` cookie),
 /// `/norange` (ignores ranges), `/chunked` (no length) and 404 for anything else. Each response closes its connection.
 async fn serve(body: Arc<Vec<u8>>) -> (String, Arc<ServerLog>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -55,7 +56,17 @@ async fn serve(body: Arc<Vec<u8>>) -> (String, Arc<ServerLog>) {
                 });
                 let total = body.len() as u64;
                 let (head, slice): (String, &[u8]) = match (path.as_str(), range) {
-                    (p @ ("/file" | "/limited"), Some(r)) => {
+                    ("/private", _)
+                        if !text
+                            .to_ascii_lowercase()
+                            .contains("\r\ncookie: session=abc\r\n") =>
+                    {
+                        (
+                            "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n".to_string(),
+                            &[][..],
+                        )
+                    }
+                    (p @ ("/file" | "/limited" | "/private"), Some(r)) => {
                         if p == "/limited"
                             && log.in_flight.fetch_add(1, Ordering::SeqCst) >= LIMITED_CONNECTIONS
                         {
@@ -183,6 +194,7 @@ fn add(m: &Manager, url: String) -> Download {
         save_dir: None,
         connections: Some(4),
         referer: None,
+        headers: Default::default(),
         start: true,
     })
     .unwrap()
@@ -414,6 +426,7 @@ async fn refused_extra_connections_fall_back_to_fewer() {
             save_dir: None,
             connections: Some(6),
             referer: None,
+            headers: Default::default(),
             start: true,
         })
         .unwrap();
@@ -427,6 +440,45 @@ async fn refused_extra_connections_fall_back_to_fewer() {
     assert!(
         log.throttled.load(Ordering::SeqCst) > 0,
         "the server never refused a connection, so the test proved nothing"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn custom_headers_reach_the_probe_and_every_segment() {
+    let body = content(5 * 1024 * 1024);
+    let (base, log) = serve(body.clone()).await;
+    let root = temp_dir("headers");
+    let m = manager(&root);
+
+    let headers = [("Cookie".to_string(), "session=abc".to_string())].into();
+    let d = m
+        .add(AddRequest {
+            url: format!("{base}/private"),
+            file_name: None,
+            save_dir: None,
+            connections: Some(4),
+            referer: None,
+            headers,
+            start: true,
+        })
+        .unwrap();
+    let done = wait_for(&m, &d.id, |d| {
+        matches!(d.status, Status::Completed | Status::Failed)
+    })
+    .await;
+
+    assert_eq!(done.status, Status::Completed, "{:?}", done.error);
+    assert_eq!(std::fs::read(done.file_path()).unwrap(), *body);
+    assert!(
+        log.range_starts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| **s > 0)
+            .count()
+            >= 2,
+        "expected several ranged requests"
     );
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -463,6 +515,7 @@ async fn bench_real_url() {
             save_dir: None,
             connections: Some(connections),
             referer: None,
+            headers: Default::default(),
             start: true,
         })
         .unwrap();

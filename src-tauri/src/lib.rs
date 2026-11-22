@@ -1,5 +1,6 @@
 pub mod engine;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -81,8 +82,10 @@ async fn probe_url(
     m: Mgr<'_>,
     url: String,
     referer: Option<String>,
+    headers: Option<BTreeMap<String, String>>,
 ) -> Result<ProbeInfo, EngineError> {
-    m.probe(&url, referer.as_deref()).await
+    m.probe(&url, referer.as_deref(), &headers.unwrap_or_default())
+        .await
 }
 
 #[tauri::command]

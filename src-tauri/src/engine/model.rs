@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use super::category::Category;
@@ -73,6 +74,9 @@ pub struct Download {
     pub category: Category,
     #[serde(default)]
     pub referer: Option<String>,
+    /// Extra request headers, such as the browser's cookies for a signed-in download.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
     #[serde(default)]
     pub content_type: Option<String>,
     #[serde(default)]
@@ -161,6 +165,8 @@ pub struct AddRequest {
     pub connections: Option<u32>,
     #[serde(default)]
     pub referer: Option<String>,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
     #[serde(default = "default_true")]
     pub start: bool,
 }

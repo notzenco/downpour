@@ -1,5 +1,6 @@
 use reqwest::header::{self, HeaderMap};
 use reqwest::{Client, StatusCode};
+use std::collections::BTreeMap;
 
 use super::category::Category;
 use super::error::EngineError;
@@ -9,16 +10,57 @@ use super::naming;
 pub struct RequestOptions<'a> {
     pub user_agent: &'a str,
     pub referer: Option<&'a str>,
+    pub headers: &'a BTreeMap<String, String>,
+}
+
+/// Headers the engine sets itself; a caller overriding them would corrupt ranges or framing.
+const RESERVED_HEADERS: [&str; 9] = [
+    "host",
+    "range",
+    "accept-encoding",
+    "content-length",
+    "connection",
+    "transfer-encoding",
+    "te",
+    "upgrade",
+    "keep-alive",
+];
+
+/// Keeps only headers that are valid and not reserved by the engine.
+pub fn sanitize_headers(headers: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    headers
+        .iter()
+        .filter(|(k, v)| {
+            let name = k.trim().to_ascii_lowercase();
+            !RESERVED_HEADERS.contains(&name.as_str())
+                && !name.starts_with("proxy-")
+                && header::HeaderName::from_bytes(name.as_bytes()).is_ok()
+                && header::HeaderValue::from_str(v.trim()).is_ok()
+        })
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .collect()
 }
 
 pub fn request(client: &Client, url: &str, opts: &RequestOptions<'_>) -> reqwest::RequestBuilder {
-    let mut req = client
-        .get(url)
-        .header(header::USER_AGENT, opts.user_agent)
-        // Compressed transfer would make byte ranges refer to the encoded body.
-        .header(header::ACCEPT_ENCODING, "identity");
+    // Compressed transfer would make byte ranges refer to the encoded body.
+    let mut req = client.get(url).header(header::ACCEPT_ENCODING, "identity");
+    if !opts
+        .headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case("user-agent"))
+    {
+        req = req.header(header::USER_AGENT, opts.user_agent);
+    }
     if let Some(r) = opts.referer {
         req = req.header(header::REFERER, r);
+    }
+    for (name, value) in opts.headers {
+        if let (Ok(n), Ok(v)) = (
+            header::HeaderName::from_bytes(name.as_bytes()),
+            header::HeaderValue::from_str(value),
+        ) {
+            req = req.header(n, v);
+        }
     }
     req
 }
@@ -102,6 +144,47 @@ pub fn parse_content_range_total(value: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn caller_headers_cannot_override_engine_headers() {
+        let input: BTreeMap<String, String> = [
+            ("Cookie", " session=abc "),
+            ("User-Agent", "Mozilla/5.0"),
+            ("Range", "bytes=0-1"),
+            ("accept-encoding", "gzip"),
+            ("Proxy-Authorization", "x"),
+            ("Bad Name", "x"),
+            ("X-Ok", "line\nbreak"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let kept: Vec<(String, String)> = sanitize_headers(&input).into_iter().collect();
+        assert_eq!(
+            kept,
+            vec![
+                ("Cookie".to_string(), "session=abc".to_string()),
+                ("User-Agent".to_string(), "Mozilla/5.0".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn custom_user_agent_replaces_the_default() {
+        let client = Client::new();
+        let headers: BTreeMap<String, String> =
+            [("user-agent".to_string(), "Browser/1".to_string())].into();
+        let opts = RequestOptions {
+            user_agent: "Downpour/1",
+            referer: None,
+            headers: &headers,
+        };
+        let req = request(&client, "http://example.invalid/", &opts)
+            .build()
+            .unwrap();
+        let agents: Vec<_> = req.headers().get_all(header::USER_AGENT).iter().collect();
+        assert_eq!(agents, ["Browser/1"]);
+    }
 
     #[test]
     fn content_range_total() {

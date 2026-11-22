@@ -9,7 +9,7 @@ mod store;
 mod worker;
 
 use reqwest::Client;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -192,7 +192,12 @@ impl Manager {
         self.inner.state.lock().unwrap().settings.clone()
     }
 
-    pub async fn probe(&self, url: &str, referer: Option<&str>) -> Result<ProbeInfo, EngineError> {
+    pub async fn probe(
+        &self,
+        url: &str,
+        referer: Option<&str>,
+        headers: &BTreeMap<String, String>,
+    ) -> Result<ProbeInfo, EngineError> {
         let url = validate_url(url)?;
         let ua = self.settings().user_agent;
         probe::probe(
@@ -201,6 +206,7 @@ impl Manager {
             &RequestOptions {
                 user_agent: &ua,
                 referer,
+                headers: &probe::sanitize_headers(headers),
             },
         )
         .await
@@ -263,6 +269,7 @@ impl Manager {
                     .clamp(1, MAX_CONNECTIONS),
                 category,
                 referer: req.referer.clone(),
+                headers: probe::sanitize_headers(&req.headers),
                 content_type: None,
                 etag: None,
                 last_modified: None,
@@ -592,6 +599,7 @@ async fn run_job(
     let opts = RequestOptions {
         user_agent: &settings.user_agent,
         referer: dl.referer.as_deref(),
+        headers: &dl.headers,
     };
     let mut probe_cancel = cancel.clone();
     let info = tokio::select! {
@@ -681,6 +689,7 @@ async fn run_job(
         url: info.final_url.clone(),
         user_agent: settings.user_agent.clone(),
         referer: dl.referer.clone(),
+        headers: dl.headers.clone(),
         part_path: part.clone(),
         ranged: dl.resumable,
         connections: dl.connections,

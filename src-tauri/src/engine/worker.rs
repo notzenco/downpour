@@ -1,6 +1,6 @@
 use futures_util::StreamExt;
 use reqwest::{Client, StatusCode, header};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -27,6 +27,7 @@ pub struct JobCtx {
     pub url: String,
     pub user_agent: String,
     pub referer: Option<String>,
+    pub headers: BTreeMap<String, String>,
     pub part_path: PathBuf,
     /// The server honours byte ranges, so segments can run in parallel and resume.
     pub ranged: bool,
@@ -194,6 +195,7 @@ async fn fetch(ctx: &JobCtx, seg: &LiveSegment) -> Result<(), EngineError> {
     let opts = RequestOptions {
         user_agent: &ctx.user_agent,
         referer: ctx.referer.as_deref(),
+        headers: &ctx.headers,
     };
     let mut req = probe::request(&ctx.client, &ctx.url, &opts);
     if ctx.ranged {
