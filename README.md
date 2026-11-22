@@ -7,7 +7,10 @@ A fast, resumable, multi-connection download manager for Windows, macOS and
 Linux. The download engine is written in Rust; the desktop app uses Tauri 2
 with a React and TypeScript interface.
 
-![Downpour showing active downloads and the connection map](docs/screenshot-dark.png)
+![Downpour downloading two kernel tarballs, with the connection map splitting ranges as connections free up](docs/demo.gif)
+
+<sub>Real downloads from cdn.kernel.org with a 20 MB/s limit, recorded from the
+engine and replayed through the interface at 2× speed.</sub>
 
 ## Why it is fast
 
