@@ -108,13 +108,23 @@ async fn serve(body: Arc<Vec<u8>>) -> (String, Arc<ServerLog>) {
                     .write_all(format!("{head}Connection: close\r\n\r\n").as_bytes())
                     .await;
                 if path == "/limited" {
-                    for chunk in slice.chunks(32 * 1024) {
+                    let chunks: Vec<&[u8]> = slice.chunks(32 * 1024).collect();
+                    let mut released = false;
+                    for (i, chunk) in chunks.iter().enumerate() {
+                        // Free the slot before the client can see the transfer end, so the
+                        // server never refuses a connection over a transfer that is finished.
+                        if i + 1 == chunks.len() {
+                            log.in_flight.fetch_sub(1, Ordering::SeqCst);
+                            released = true;
+                        }
                         if sock.write_all(chunk).await.is_err() {
                             break;
                         }
                         tokio::time::sleep(Duration::from_millis(2)).await;
                     }
-                    log.in_flight.fetch_sub(1, Ordering::SeqCst);
+                    if !released {
+                        log.in_flight.fetch_sub(1, Ordering::SeqCst);
+                    }
                 } else {
                     let _ = sock.write_all(slice).await;
                 }
