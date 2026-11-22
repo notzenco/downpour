@@ -49,6 +49,8 @@ command under [Development](#development).
 - Automatic file-type categories, optionally saved into per-type folders
 - Add links by pasting anywhere in the window, dragging them in, or several
   at once; the add dialog checks size and resume support before you start
+- Browser extension for Chrome, Edge, Brave, Vivaldi and Firefox that sends
+  downloads to the app, with the site's cookies so signed-in downloads work
 - Offer to download a link that is on the clipboard when you switch to the app
 - Live connection map showing where in the file each connection is writing
 - Keyboard control: Ctrl/⌘+N add, Ctrl/⌘+F search, Ctrl/⌘+, settings,
@@ -58,6 +60,33 @@ command under [Development](#development).
 - Light and dark themes that follow the system
 
 ![Adding a download in the light theme](docs/screenshot-add-light.png)
+
+## Browser extension
+
+The extension in [`extension/`](extension) catches downloads as they start and
+sends them to Downpour, and adds **Download with Downpour** to the right-click
+menu of links and media. Click its toolbar button to switch catching off and
+on. Downloads from private windows, small files (under 256 KB), and `blob:` or
+`data:` links stay in the browser, and if Downpour is not installed the browser
+keeps the download.
+
+Downpour registers itself with installed browsers when it starts, using the
+browsers' native messaging, which only lets this extension talk to it. Then:
+
+- **Chrome, Edge, Brave, Vivaldi:** open the extensions page, turn on
+  developer mode, choose **Load unpacked** and select the `extension` folder.
+- **Firefox:** open `about:debugging#/runtime/this-firefox`, choose **Load
+  Temporary Add-on** and select `extension/manifest.json`. Temporary add-ons
+  are removed when Firefox restarts until the extension is signed.
+
+By default each link opens the add dialog so you can pick the folder; turn off
+**Ask before downloading links from the browser** in Settings to start them
+straight away.
+
+**Privacy.** For each download the extension sends the link, the page it came
+from, the browser's user agent and the site's cookies to the Downpour app on the
+same computer, and nothing anywhere else. Downpour keeps those cookies with the
+download so it can resume, in its local data folder.
 
 ## Reliability
 
@@ -85,13 +114,22 @@ src-tauri/src/
 │   ├── mod.rs       Manager: queue, pause/resume, progress events, saves
 │   ├── store.rs     atomic JSON persistence
 │   └── naming.rs    Content-Disposition parsing, safe and unique file names
+├── browser.rs       native messaging helper and browser registration
 └── lib.rs           Tauri commands, tray, notifications, window behaviour
 
 src/                 React interface
 ├── api.ts           typed bridge to the Rust commands and events
 ├── store.ts         app state fed by engine events
 └── components/      list, connection map, dialogs, settings
+
+extension/           browser extension (Manifest V3, Chromium and Firefox)
+├── background.js    catches downloads, context menu, hands links to the app
+└── capture.js       which downloads to take and what to send, kept testable
 ```
+
+The browser starts the Downpour binary itself as its messaging helper. It
+checks the message, passes the link to the running app (starting it if
+needed) through the single-instance handover, and exits.
 
 The engine pushes events (download updated, removed, progress every 500 ms)
 and the interface renders from them; the interface never polls.
@@ -105,6 +143,10 @@ and the interface renders from them; the interface never polls.
   queue limits and file-name collisions.
 - **IPC contract tests** call every command through Tauri's mock runtime with
   the exact JSON the interface sends, so a renamed field on either side fails.
+- **Browser integration tests** cover message framing, rejecting non-web
+  links, registering only with installed browsers, cookies reaching every
+  segment request, the extension's capture rules, and that the extension's key
+  matches the ID the helper allows.
 - **Unit tests** cover range planning, splitting, header parsing, file-name
   sanitising and the interface's formatting helpers.
 - **CI** runs formatting, type checking, Clippy with warnings as errors and all
@@ -133,9 +175,9 @@ DOWNPOUR_BENCH_URL=https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.tar.x
 
 ## Roadmap
 
-- Browser extensions that hand downloads to the app
+- Signed extension listings in the Chrome Web Store and Firefox Add-ons
 - Scheduler, and multiple named queues
-- Per-download speed limits, authentication, cookies and custom headers
+- Per-download speed limits, and entering credentials for protected downloads
 - Proxy settings
 - Media and whole-site grabbing
 - Refreshing an expired link on a paused download
