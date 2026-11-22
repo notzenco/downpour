@@ -64,6 +64,16 @@ command under [Development](#development).
 
 ![Adding a download in the light theme](docs/screenshot-add-light.png)
 
+## Install
+
+Download the installer for your system from the
+[latest release](https://github.com/notzenco/downpour/releases/latest):
+a `.dmg` for macOS (Apple silicon or Intel), an `.msi` or setup `.exe` for
+Windows, or an `.AppImage`, `.deb` or `.rpm` for Linux. The builds are not
+code-signed yet, so macOS asks you to right-click the app and choose **Open**
+the first time, and Windows SmartScreen asks you to choose **More info**, then
+**Run anyway**.
+
 ## Browser extension
 
 The extension in [`extension/`](extension) catches downloads as they start and
@@ -76,8 +86,10 @@ keeps the download.
 Downpour registers itself with installed browsers when it starts, using the
 browsers' native messaging, which only lets this extension talk to it. Then:
 
-- **Chrome, Edge, Brave, Vivaldi:** open the extensions page, turn on
-  developer mode, choose **Load unpacked** and select the `extension` folder.
+- **Chrome, Edge, Brave, Vivaldi:** unzip `downpour-extension.zip` from the
+  release (or use the `extension` folder of this repository), open the
+  extensions page, turn on developer mode, choose **Load unpacked** and select
+  the folder.
 - **Firefox:** open `about:debugging#/runtime/this-firefox`, choose **Load
   Temporary Add-on** and select `extension/manifest.json`. Temporary add-ons
   are removed when Firefox restarts until the extension is signed.
@@ -178,7 +190,8 @@ DOWNPOUR_BENCH_URL=https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.tar.x
 
 ## Roadmap
 
-- Signed extension listings in the Chrome Web Store and Firefox Add-ons
+- Signed and notarized installers, and signed extension listings in the
+  Chrome Web Store and Firefox Add-ons
 - Scheduler, and multiple named queues
 - Per-download speed limits, and entering credentials for protected downloads
 - Proxy settings
